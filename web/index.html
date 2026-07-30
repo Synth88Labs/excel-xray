@@ -1,0 +1,211 @@
+<!-- ============================================================
+     EXCEL X-RAY — interactive web widget (paste into an Elementor HTML component).
+     The user drops/selects an .xlsx and the analysis runs ENTIRELY in their
+     browser (SheetJS). The file is never uploaded anywhere. All CSS is scoped
+     under .xrayapp so it won't clash with your theme.
+     ============================================================ -->
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+.xrayapp{font-family:'Poppins',-apple-system,'Segoe UI',sans-serif;color:#1f2733;line-height:1.6;max-width:960px;margin:0 auto;}
+.xrayapp *{box-sizing:border-box;}
+.xrayapp .drop{border:2px dashed #33C481;border-radius:16px;background:#f4faf6;padding:44px 24px;text-align:center;cursor:pointer;transition:.15s;}
+.xrayapp .drop:hover,.xrayapp .drop.drag{background:#e8f3ec;border-color:#217346;}
+.xrayapp .drop .ic{font-size:40px;}
+.xrayapp .drop h3{margin:8px 0 4px;font-size:1.25rem;color:#16281f;}
+.xrayapp .drop p{margin:2px 0;color:#5b6673;font-size:.95rem;}
+.xrayapp .drop .priv{display:inline-block;margin-top:12px;background:#fff;border:1px solid #bfe3ce;color:#217346;border-radius:20px;padding:5px 14px;font-size:.82rem;font-weight:600;}
+.xrayapp .btn{display:inline-block;margin-top:14px;background:#217346;color:#fff;padding:10px 22px;border-radius:8px;font-weight:600;border:none;cursor:pointer;font-family:inherit;font-size:.95rem;}
+.xrayapp .status{margin:16px 0;color:#5b6673;font-size:.95rem;}
+.xrayapp .err{background:#FFF0F0;border:1px solid #f3c0c0;color:#9C0006;border-radius:10px;padding:12px 16px;margin:14px 0;}
+/* ---- report ---- */
+.xrayapp .hero{display:flex;gap:28px;align-items:center;background:#fff;border:1px solid #e3ece7;border-radius:16px;padding:26px 30px;box-shadow:0 6px 20px rgba(15,46,30,.06);flex-wrap:wrap;}
+.xrayapp .ring{position:relative;width:130px;height:130px;flex:0 0 auto;}
+.xrayapp .ring svg{transform:rotate(-90deg);}
+.xrayapp .ring .score{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.xrayapp .ring .score b{font-size:2.2rem;line-height:1;} .xrayapp .ring .score small{color:#8a97a3;font-size:.75rem;}
+.xrayapp .meta h2{margin:0 0 4px;font-size:1.3rem;}
+.xrayapp .grade{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;color:#fff;font-weight:700;font-size:1.3rem;margin-right:10px;vertical-align:middle;}
+.xrayapp .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0;}
+.xrayapp .card{background:#fff;border:1px solid #e3ece7;border-radius:12px;padding:16px;text-align:center;}
+.xrayapp .card .num{font-size:1.8rem;font-weight:700;color:#16281f;} .xrayapp .card .lbl{color:#5b6673;font-size:.85rem;}
+.xrayapp .chips{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0;}
+.xrayapp .chip{background:#fff;border:1px solid #e3ece7;border-radius:20px;padding:6px 14px;font-size:.9rem;}
+.xrayapp .chip b{color:#9C0006;} .xrayapp .chip.ok{color:#217346;}
+.xrayapp h3.sec{margin:26px 0 10px;font-size:1.15rem;}
+.xrayapp table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;font-size:.93rem;box-shadow:0 4px 14px rgba(15,46,30,.05);}
+.xrayapp th,.xrayapp td{padding:11px 13px;text-align:left;border-bottom:1px solid #eef2f0;vertical-align:top;}
+.xrayapp th{background:#eef6f1;font-weight:600;}
+.xrayapp .mono{font-family:'Consolas','Courier New',monospace;font-size:.86rem;}
+.xrayapp .badge{padding:2px 10px;border-radius:20px;font-size:.78rem;font-weight:600;white-space:nowrap;}
+.xrayapp .cat{font-weight:600;}
+.xrayapp .detail{font-family:'Consolas',monospace;font-size:.8rem;color:#5b6673;margin-top:4px;word-break:break-all;}
+.xrayapp .clean{background:#e8f3ec;border:1px solid #bfe3ce;color:#217346;border-radius:12px;padding:20px;font-weight:600;}
+.xrayapp .again{margin-top:18px;}
+@media(max-width:620px){.xrayapp .cards{grid-template-columns:repeat(2,1fr);}}
+</style>
+
+<div class="xrayapp">
+  <div class="drop" id="xrayDrop">
+    <div class="ic">🩻</div>
+    <h3>Drop your Excel file here</h3>
+    <p>or click to browse — <b>.xlsx</b> / <b>.xlsm</b></p>
+    <button class="btn" type="button" id="xrayBtn">Choose a file</button>
+    <div><span class="priv">🔒 100% private — your file never leaves your browser</span></div>
+    <input type="file" id="xrayInput" accept=".xlsx,.xlsm,.xltx,.xltm" style="display:none">
+  </div>
+  <div class="status" id="xrayStatus"></div>
+  <div id="xrayResult"></div>
+</div>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script>
+(function(){
+  var ERR = ["#REF!","#DIV/0!","#VALUE!","#NAME?","#N/A","#NULL!","#NUM!","#SPILL!","#CALC!"];
+  var VOL = ["NOW","TODAY","RAND","RANDBETWEEN","OFFSET","INDIRECT","INFO","CELL"];
+  var CELL_RE = /(?<![A-Za-z0-9_\]])(\$?)([A-Za-z]{1,3})(\$?)([1-9]\d{0,6})(?![A-Za-z0-9_(])/g;
+  var EXT_RE  = /\[(?:\d+|[^\]]*\.xl[a-z]*)\]/i;
+  var GRADEC = {A:"#217346",B:"#33C481",C:"#d19a00",D:"#e06b1f",F:"#c0392b"};
+  var SEV = {high:["#9C0006","#FFC7CE","High"],medium:["#8a5b00","#FFF0C2","Medium"],low:["#1d4ed8","#dbeafe","Low"],info:["#475569","#e2e8f0","Info"]};
+  var SEVORD = {high:0,medium:1,low:2,info:3};
+
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function colToNum(letters){var n=0,L=letters.toUpperCase();for(var i=0;i<L.length;i++)n=n*26+(L.charCodeAt(i)-64);return n;}
+  function sgn(n){return n>=0?("+"+n):(""+n);}
+  function normalize(formula,col,row){
+    return formula.toUpperCase().replace(CELL_RE,function(m,ac,letters,ar,digits){
+      var rc=colToNum(letters),rr=parseInt(digits,10);
+      var cp=ac?("C[$"+rc+"]"):("C["+sgn(rc-col)+"]");
+      var rp=ar?("R[$"+rr+"]"):("R["+sgn(rr-row)+"]");
+      return rp+cp;
+    });
+  }
+  function volIn(f){var up=f.toUpperCase(),out=[];for(var i=0;i<VOL.length;i++)if(up.indexOf(VOL[i]+"(")>=0)out.push(VOL[i]);return out;}
+  function numToCol(n){var s="";while(n>0){var r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26);}return s;}
+
+  function runs(rows){var out=[],cur=[];for(var i=0;i<rows.length;i++){if(cur.length&&rows[i]===cur[cur.length-1]+1)cur.push(rows[i]);else{if(cur.length)out.push(cur);cur=[rows[i]];}}if(cur.length)out.push(cur);return out;}
+  function majority(items){var c={},best=items[0],bn=0;for(var i=0;i<items.length;i++){c[items[i]]=(c[items[i]]||0)+1;if(c[items[i]]>bn){bn=c[items[i]];best=items[i];}}return [best,bn];}
+
+  function score(findings){
+    var pen={"Formula error":[10,40],"Broken reference":[10,40],"Inconsistent formula":[7,35],"External link":[3,15],"Volatile function":[1,10],"Hidden sheet":[2,10]};
+    var per={};findings.forEach(function(f){per[f.category]=(per[f.category]||0)+1;});
+    var h=100;for(var k in per){var p=pen[k]||[2,10];h-=Math.min(p[0]*per[k],p[1]);}
+    h=Math.max(0,Math.min(100,h));
+    var g,l;
+    if(h>=90){g="A";l="Low risk";}else if(h>=75){g="B";l="Low-moderate risk";}
+    else if(h>=60){g="C";l="Moderate risk";}else if(h>=40){g="D";l="High risk";}else{g="F";l="Critical risk";}
+    return {health:h,grade:g,risk:l};
+  }
+
+  function analyze(wb){
+    var findings=[], sheets=[], nCells=0, nFormulas=0;
+    var wbSheets=(wb.Workbook&&wb.Workbook.Sheets)||[];
+    wb.SheetNames.forEach(function(name,idx){
+      var ws=wb.Sheets[name];
+      var hiddenFlag=wbSheets[idx]?wbSheets[idx].Hidden:0;
+      var state=hiddenFlag===2?"veryHidden":(hiddenFlag===1?"hidden":"visible");
+      var nf=0, maxR=0, maxC=0;
+      var colPat={}, colF={};
+      if(ws && ws['!ref']){
+        var rng=XLSX.utils.decode_range(ws['!ref']);
+        maxR=rng.e.r+1; maxC=rng.e.c+1;
+        for(var r=rng.s.r;r<=rng.e.r;r++){
+          for(var c=rng.s.c;c<=rng.e.c;c++){
+            var addr=XLSX.utils.encode_cell({r:r,c:c});
+            var cell=ws[addr]; if(!cell) continue; nCells++;
+            if(cell.f){
+              nf++; nFormulas++;
+              var f="="+cell.f;
+              if(f.indexOf("#REF!")>=0) findings.push({severity:"high",category:"Broken reference",sheet:name,cell:addr,message:"Formula contains #REF! — a deleted cell/range it can no longer find.",detail:f.slice(0,120)});
+              if(EXT_RE.test(f)) findings.push({severity:"medium",category:"External link",sheet:name,cell:addr,message:"Formula links to another workbook — breaks silently if that file moves.",detail:f.slice(0,120)});
+              var v=volIn(f); if(v.length) findings.push({severity:"low",category:"Volatile function",sheet:name,cell:addr,message:"Uses "+v.join(", ")+" — recalculates constantly; can be slow or unstable.",detail:f.slice(0,120)});
+              var col1=c+1,row1=r+1;
+              (colPat[col1]=colPat[col1]||{})[row1]=normalize(f,col1,row1);
+              (colF[col1]=colF[col1]||{})[row1]=f;
+            }
+            if(cell.t==='e'){
+              var ev=cell.w||"#ERROR"; findings.push({severity:"high",category:"Formula error",sheet:name,cell:addr,message:"Cell evaluates to "+ev+".",detail:""});
+            }
+          }
+        }
+        // inconsistent formulas per column
+        Object.keys(colPat).forEach(function(cs){
+          var col=parseInt(cs,10), map=colPat[col];
+          var rowsN=Object.keys(map).map(Number).sort(function(a,b){return a-b;});
+          runs(rowsN).forEach(function(run){
+            if(run.length<3) return;
+            var pats=run.map(function(rr){return map[rr];});
+            var mj=majority(pats);
+            if(mj[1]<=run.length/2) return;
+            run.forEach(function(rr){
+              if(map[rr]!==mj[0]){
+                findings.push({severity:"high",category:"Inconsistent formula",sheet:name,cell:numToCol(col)+rr,message:"This formula breaks the pattern of the column around it — a classic hidden bug.",detail:colF[col][rr].slice(0,120)});
+              }
+            });
+          });
+        });
+      }
+      sheets.push({name:name,state:state,rows:maxR,cols:maxC,formulas:nf});
+      if(state!=="visible") findings.push({severity:state==="hidden"?"info":"low",category:"Hidden sheet",sheet:name,cell:"-",message:"Sheet is "+state+" — hidden logic is easy to forget and often risky.",detail:""});
+    });
+    findings.sort(function(a,b){return (SEVORD[a.severity]-SEVORD[b.severity])||a.category.localeCompare(b.category);});
+    var counts={}; findings.forEach(function(f){counts[f.category]=(counts[f.category]||0)+1;});
+    var sc=score(findings);
+    return {sheets:sheets,findings:findings,counts:counts,nSheets:sheets.length,nFormulas:nFormulas,health:sc.health,grade:sc.grade,risk:sc.risk};
+  }
+
+  function render(res,filename){
+    var gc=GRADEC[res.grade]||"#217346";
+    var circ=2*Math.PI*54, dash=(circ*res.health/100).toFixed(1);
+    var highs=res.findings.filter(function(f){return f.severity==="high";}).length;
+    var cards=[["Sheets",res.nSheets],["Formula cells",res.nFormulas],["Findings",res.findings.length],["High severity",highs]];
+    var cardH=cards.map(function(k){return '<div class="card"><div class="num">'+k[1]+'</div><div class="lbl">'+esc(k[0])+'</div></div>';}).join("");
+    var cats=Object.keys(res.counts).sort(function(a,b){return res.counts[b]-res.counts[a];});
+    var chipH=cats.length?cats.map(function(c){return '<div class="chip">'+esc(c)+' <b>'+res.counts[c]+'</b></div>';}).join(""):'<div class="chip ok">No issues detected 🎉</div>';
+    var frows=res.findings.map(function(f){var s=SEV[f.severity]||SEV.info;var d=f.detail?'<div class="detail">'+esc(f.detail)+'</div>':'';return '<tr><td><span class="badge" style="color:'+s[0]+';background:'+s[1]+'">'+s[2]+'</span></td><td class="cat">'+esc(f.category)+'</td><td class="mono">'+esc(f.sheet)+'</td><td class="mono">'+esc(f.cell)+'</td><td>'+esc(f.message)+d+'</td></tr>';}).join("");
+    var ftable=res.findings.length?('<table><thead><tr><th>Severity</th><th>Issue</th><th>Sheet</th><th>Cell</th><th>What it means</th></tr></thead><tbody>'+frows+'</tbody></table>'):'<div class="clean">✅ No issues detected. This workbook looks healthy.</div>';
+    var srows=res.sheets.map(function(s){return '<tr><td class="mono">'+esc(s.name)+'</td><td>'+esc(s.state)+'</td><td>'+s.rows+'</td><td>'+s.cols+'</td><td>'+s.formulas+'</td></tr>';}).join("");
+    var note=res.nFormulas===0?'<div class="err" style="background:#fffaf0;border-color:#f3e2c0;color:#8a6d00">Heads up: no formulas were detected. If this workbook should contain formulas, open it in Excel and re-save — some tools store formulas without cached results, which an in-browser reader can\'t see.</div>':'';
+    return note+
+      '<div class="hero"><div class="ring"><svg width="130" height="130">'+
+        '<circle cx="65" cy="65" r="54" fill="none" stroke="#e6efe9" stroke-width="14"/>'+
+        '<circle cx="65" cy="65" r="54" fill="none" stroke="'+gc+'" stroke-width="14" stroke-linecap="round" stroke-dasharray="'+dash+' '+circ.toFixed(1)+'"/>'+
+      '</svg><div class="score"><b>'+res.health+'</b><small>HEALTH / 100</small></div></div>'+
+      '<div class="meta"><h2><span class="grade" style="background:'+gc+'">'+res.grade+'</span>'+esc(res.risk)+'</h2><div class="chips">'+chipH+'</div>'+
+      '<div style="color:#8a97a3;font-size:.85rem;margin-top:8px">'+esc(filename)+'</div></div></div>'+
+      '<div class="cards">'+cardH+'</div>'+
+      '<h3 class="sec">Findings</h3>'+ftable+
+      '<h3 class="sec">Sheet breakdown</h3><table><thead><tr><th>Sheet</th><th>State</th><th>Rows</th><th>Cols</th><th>Formulas</th></tr></thead><tbody>'+srows+'</tbody></table>'+
+      '<div class="again"><button class="btn" type="button" onclick="document.getElementById(\'xrayInput\').click()">🩻 X-Ray another file</button></div>';
+  }
+
+  var drop=document.getElementById('xrayDrop'),input=document.getElementById('xrayInput'),
+      btn=document.getElementById('xrayBtn'),status=document.getElementById('xrayStatus'),result=document.getElementById('xrayResult');
+
+  function handle(file){
+    if(!file) return;
+    if(!/\.(xlsx|xlsm|xltx|xltm)$/i.test(file.name)){status.innerHTML='<div class="err">Please choose an .xlsx or .xlsm workbook.</div>';return;}
+    if(typeof XLSX==='undefined'){status.innerHTML='<div class="err">The spreadsheet engine is still loading — try again in a second.</div>';return;}
+    status.textContent='🔍 Analyzing '+file.name+' … (in your browser)';
+    result.innerHTML='';
+    var reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        var res=analyze(wb);
+        status.textContent='';
+        result.innerHTML=render(res,file.name);
+      }catch(err){status.innerHTML='<div class="err">Could not read that file: '+esc(err.message||err)+'</div>';}
+    };
+    reader.onerror=function(){status.innerHTML='<div class="err">Could not read the file.</div>';};
+    reader.readAsArrayBuffer(file);
+  }
+
+  btn.addEventListener('click',function(e){e.stopPropagation();input.click();});
+  drop.addEventListener('click',function(){input.click();});
+  input.addEventListener('change',function(){handle(input.files[0]);});
+  ['dragover','dragenter'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.add('drag');});});
+  ['dragleave','dragend','drop'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.remove('drag');});});
+  drop.addEventListener('drop',function(e){if(e.dataTransfer&&e.dataTransfer.files.length)handle(e.dataTransfer.files[0]);});
+})();
+</script>
