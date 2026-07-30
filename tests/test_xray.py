@@ -95,6 +95,9 @@ def test_report_renders_html(tmp_path: Path):
     wb.save(path)
     result = analyze(path)
     html_out = render_html(result, generated="test")
-    assert "Excel X-Ray Report" in html_out
+    # embeddable fragment: scoped wrapper, no document scaffolding, no header/footer
+    assert '<div class="xray">' in html_out
+    assert "<!doctype" not in html_out.lower()
+    assert "<body" not in html_out.lower()
     assert "HEALTH / 100" in html_out
     assert str(result.health) in html_out
