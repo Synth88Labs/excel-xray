@@ -1,0 +1,100 @@
+"""Tests for the Excel X-Ray engine. Run with:  python -m pytest"""
+
+import sys
+from pathlib import Path
+
+from openpyxl import Workbook
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from analyze import analyze, normalize_formula, _score, Finding  # noqa: E402
+from report import render_html  # noqa: E402
+
+
+def _cats(result):
+    return {f.category for f in result.findings}
+
+
+def test_normalize_makes_column_pattern_consistent():
+    # =A1+B1 in C1 and =A2+B2 in C2 should normalize to the SAME relative pattern
+    assert normalize_formula("=A1+B1", 3, 1) == normalize_formula("=A2+B2", 3, 2)
+    # a different structure should normalize differently
+    assert normalize_formula("=A1+B1", 3, 1) != normalize_formula("=A1*B1", 3, 1)
+
+
+def test_detects_inconsistent_formula(tmp_path: Path):
+    wb = Workbook()
+    ws = wb.active
+    # Column C: consistent =A+B pattern, except one row that multiplies (the bug)
+    for r in range(1, 6):
+        ws[f"A{r}"] = r
+        ws[f"B{r}"] = r * 2
+        ws[f"C{r}"] = f"=A{r}+B{r}"
+    ws["C3"] = "=A3*B3"  # breaks the pattern
+    path = tmp_path / "wb.xlsx"
+    wb.save(path)
+
+    result = analyze(path)
+    incon = [f for f in result.findings if f.category == "Inconsistent formula"]
+    assert len(incon) == 1
+    assert incon[0].cell == "C3"
+
+
+def test_detects_broken_ref_and_volatile(tmp_path: Path):
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "=#REF!+1"
+    ws["A2"] = "=TODAY()"
+    ws["A3"] = "=INDIRECT(\"A1\")"
+    path = tmp_path / "wb.xlsx"
+    wb.save(path)
+
+    result = analyze(path)
+    cats = _cats(result)
+    assert "Broken reference" in cats
+    assert "Volatile function" in cats
+
+
+def test_detects_hidden_sheet(tmp_path: Path):
+    wb = Workbook()
+    wb.active.title = "Visible"
+    hidden = wb.create_sheet("Secret")
+    hidden.sheet_state = "hidden"
+    path = tmp_path / "wb.xlsx"
+    wb.save(path)
+
+    result = analyze(path)
+    assert "Hidden sheet" in _cats(result)
+
+
+def test_clean_workbook_scores_high(tmp_path: Path):
+    wb = Workbook()
+    ws = wb.active
+    for r in range(1, 6):
+        ws[f"A{r}"] = r
+        ws[f"B{r}"] = f"=A{r}*2"
+    path = tmp_path / "clean.xlsx"
+    wb.save(path)
+
+    result = analyze(path)
+    assert result.health >= 90
+    assert result.grade == "A"
+
+
+def test_score_penalizes_errors():
+    findings = [Finding("high", "Formula error", "S", "A1", "x") for _ in range(3)]
+    health, grade, _ = _score(findings)
+    assert health < 100
+    assert grade != "A" or health < 100
+
+
+def test_report_renders_html(tmp_path: Path):
+    wb = Workbook()
+    wb.active["A1"] = "=TODAY()"
+    path = tmp_path / "wb.xlsx"
+    wb.save(path)
+    result = analyze(path)
+    html_out = render_html(result, generated="test")
+    assert "Excel X-Ray Report" in html_out
+    assert "HEALTH / 100" in html_out
+    assert str(result.health) in html_out
