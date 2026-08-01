@@ -41,6 +41,7 @@
 .xrayapp .cat{font-weight:600;}
 .xrayapp .detail{font-family:'Consolas',monospace;font-size:.8rem;color:#5b6673;margin-top:4px;word-break:break-all;}
 .xrayapp .clean{background:#e8f3ec;border:1px solid #bfe3ce;color:#217346;border-radius:12px;padding:20px;font-weight:600;}
+.xrayapp .caveat{margin:16px 0;font-size:.85rem;color:#5b6673;background:#f8faf9;border:1px solid #e3ece7;border-radius:10px;padding:12px 14px;}
 .xrayapp .again{margin-top:18px;}
 @media(max-width:620px){.xrayapp .cards{grid-template-columns:repeat(2,1fr);}}
 </style>
@@ -63,6 +64,7 @@
 (function(){
   var ERR = ["#REF!","#DIV/0!","#VALUE!","#NAME?","#N/A","#NULL!","#NUM!","#SPILL!","#CALC!"];
   var VOL = ["NOW","TODAY","RAND","RANDBETWEEN","OFFSET","INDIRECT","INFO","CELL"];
+  var AGG = /\b(SUM|SUMIF|SUMIFS|AVERAGE|AVERAGEIF|AVERAGEIFS|SUBTOTAL|COUNT|COUNTA|COUNTIF|COUNTIFS|MIN|MAX|PRODUCT|MEDIAN|AGGREGATE)\s*\(/i;
   var CELL_RE = /(?<![A-Za-z0-9_\]])(\$?)([A-Za-z]{1,3})(\$?)([1-9]\d{0,6})(?![A-Za-z0-9_(])/g;
   var EXT_RE  = /\[(?:\d+|[^\]]*\.xl[a-z]*)\]/i;
   var GRADEC = {A:"#217346",B:"#33C481",C:"#d19a00",D:"#e06b1f",F:"#c0392b"};
@@ -80,7 +82,7 @@
       return rp+cp;
     });
   }
-  function volIn(f){var up=f.toUpperCase(),out=[];for(var i=0;i<VOL.length;i++)if(up.indexOf(VOL[i]+"(")>=0)out.push(VOL[i]);return out;}
+  function volIn(f){var up=f.replace(/"[^"]*"/g,'').toUpperCase(),out=[];for(var i=0;i<VOL.length;i++)if(up.indexOf(VOL[i]+"(")>=0)out.push(VOL[i]);return out;}
   function numToCol(n){var s="";while(n>0){var r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26);}return s;}
 
   function runs(rows){var out=[],cur=[];for(var i=0;i<rows.length;i++){if(cur.length&&rows[i]===cur[cur.length-1]+1)cur.push(rows[i]);else{if(cur.length)out.push(cur);cur=[rows[i]];}}if(cur.length)out.push(cur);return out;}
@@ -137,10 +139,11 @@
             var pats=run.map(function(rr){return map[rr];});
             var mj=majority(pats);
             if(mj[1]<=run.length/2) return;
-            run.forEach(function(rr){
-              if(map[rr]!==mj[0]){
-                findings.push({severity:"high",category:"Inconsistent formula",sheet:name,cell:numToCol(col)+rr,message:"This formula breaks the pattern of the column around it — a classic hidden bug.",detail:colF[col][rr].slice(0,120)});
-              }
+            run.forEach(function(rr,ix){
+              if(map[rr]===mj[0]) return;
+              if(ix===0||ix===run.length-1) return;   // seed/total at the ends
+              if(AGG.test(colF[col][rr])) return;       // aggregate/subtotal
+              findings.push({severity:"medium",category:"Inconsistent formula",sheet:name,cell:numToCol(col)+rr,message:"This formula differs from the column's pattern — worth a review. It may be intentional (e.g. a subtotal or running total).",detail:colF[col][rr].slice(0,120)});
             });
           });
         });
@@ -174,6 +177,7 @@
       '<div class="meta"><h2><span class="grade" style="background:'+gc+'">'+res.grade+'</span>'+esc(res.risk)+'</h2><div class="chips">'+chipH+'</div>'+
       '<div style="color:#8a97a3;font-size:.85rem;margin-top:8px">'+esc(filename)+'</div></div></div>'+
       '<div class="cards">'+cardH+'</div>'+
+      '<div class="caveat">⚠ The Health Score is an indicative heuristic, not a guarantee of correctness — X-Ray can’t catch logic that’s consistent but wrong. Treat findings as leads to review, not verdicts.</div>'+
       '<h3 class="sec">Findings</h3>'+ftable+
       '<h3 class="sec">Sheet breakdown</h3><table><thead><tr><th>Sheet</th><th>State</th><th>Rows</th><th>Cols</th><th>Formulas</th></tr></thead><tbody>'+srows+'</tbody></table>'+
       '<div class="again"><button class="btn" type="button" onclick="document.getElementById(\'xrayInput\').click()">🩻 X-Ray another file</button></div>';

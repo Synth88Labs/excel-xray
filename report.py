@@ -108,6 +108,7 @@ def render_html(result: AnalysisResult, generated: str | None = None) -> str:
 .xray .cat{{font-weight:600;}}
 .xray .detail{{font-family:'Consolas',monospace;font-size:.8rem;color:#5b6673;margin-top:4px;word-break:break-all;}}
 .xray .clean{{background:#e8f3ec;border:1px solid #bfe3ce;color:#217346;border-radius:12px;padding:20px;font-weight:600;}}
+.xray .caveat{{margin:14px 0 0;font-size:.85rem;color:#8a97a3;background:#f8faf9;border:1px solid #e3ece7;border-radius:10px;padding:12px 14px;}}
 @media(max-width:620px){{.xray .cards{{grid-template-columns:repeat(2,1fr);}}}}
 </style>
 <div class="xray">
@@ -127,6 +128,8 @@ def render_html(result: AnalysisResult, generated: str | None = None) -> str:
   </div>
 
   <div class="cards">{card_html}</div>
+
+  <div class="caveat">⚠ The Health Score is an indicative heuristic, not a guarantee of correctness — X-Ray can't catch logic that is <em>consistent but wrong</em>. Treat findings as leads to review, not verdicts.</div>
 
   <h3>Findings</h3>
   {findings_table}

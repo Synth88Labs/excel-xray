@@ -33,6 +33,13 @@ _CELL_RE = re.compile(
 )
 _EXTERNAL_RE = re.compile(r"\[(?:\d+|[^\]]*\.xl[a-z]*)\]", re.IGNORECASE)
 
+# Aggregate functions — a formula using one is usually a legitimate subtotal/total,
+# not a bug, so it should not be flagged as an inconsistent formula.
+_AGG_RE = re.compile(
+    r"\b(SUM|SUMIF|SUMIFS|AVERAGE|AVERAGEIF|AVERAGEIFS|SUBTOTAL|COUNT|COUNTA|"
+    r"COUNTIF|COUNTIFS|MIN|MAX|PRODUCT|MEDIAN|AGGREGATE)\s*\(", re.IGNORECASE)
+_STRING_RE = re.compile(r'"[^"]*"')
+
 
 @dataclass
 class Finding:
@@ -92,7 +99,8 @@ def normalize_formula(formula: str, col: int, row: int) -> str:
 
 
 def _volatile_in(formula: str) -> list[str]:
-    up = formula.upper()
+    # Ignore volatile keywords that appear inside string literals ("...OFFSET()...").
+    up = _STRING_RE.sub("", formula).upper()
     return [f for f in VOLATILE_FUNCS if f + "(" in up]
 
 
@@ -178,13 +186,22 @@ def analyze(path: str | Path) -> AnalysisResult:
                 majority, maj_count = _majority(pats)
                 if maj_count <= len(run) / 2:
                     continue  # no clear pattern
-                for r in run:
-                    if rowmap[r] != majority:
-                        coord = f"{_num_to_col(c)}{r}"
-                        findings.append(Finding(
-                            "high", "Inconsistent formula", ws.title, coord,
-                            "This formula breaks the pattern of the column around it — a classic hidden bug.",
-                            col_formulas[c][r][:120]))
+                for i, r in enumerate(run):
+                    if rowmap[r] == majority:
+                        continue
+                    # Skip the common *legitimate* exceptions to cut false positives:
+                    #  - the first or last cell of a run is usually a seed or a total
+                    #  - a formula using an aggregate (SUM/AVERAGE…) is usually a subtotal
+                    if i == 0 or i == len(run) - 1:
+                        continue
+                    if _AGG_RE.search(col_formulas[c][r]):
+                        continue
+                    coord = f"{_num_to_col(c)}{r}"
+                    findings.append(Finding(
+                        "medium", "Inconsistent formula", ws.title, coord,
+                        "This formula differs from the column's pattern — worth a review. "
+                        "It may be intentional (e.g. a subtotal or running total).",
+                        col_formulas[c][r][:120]))
 
         result.sheets.append(SheetInfo(
             name=ws.title, state=ws.sheet_state,
@@ -251,7 +268,7 @@ def _score(findings: list[Finding]) -> tuple[int, str, str]:
     penalties = {
         "Formula error": (10, 40),
         "Broken reference": (10, 40),
-        "Inconsistent formula": (7, 35),
+        "Inconsistent formula": (5, 25),
         "External link": (3, 15),
         "Volatile function": (1, 10),
         "Hidden sheet": (2, 10),
