@@ -14,6 +14,10 @@ are famous for — with a **Health Score** and a ranked list of issues.
 
 Think of it as **a spell-checker — or an X-ray — for your spreadsheets.**
 
+> 🌐 **Prefer no install?** Use the **free in-browser version** — drop a workbook and get
+> an instant report, with nothing uploaded (it runs entirely on your device):
+> [Audit Any Spreadsheet for Hidden Errors](https://excelguru.io/tutorials/audit-any-spreadsheet-for-hidden-errors/) on ExcelGuru.io.
+
 ## What it detects
 
 | Check | Why it matters |
